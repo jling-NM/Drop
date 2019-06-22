@@ -46,6 +46,8 @@ private slots:
     void sensorSettingsChanged();
     void start_newExperiment(Experiment *experiment);
     void collectionDuration_valueChanged(int newValue);
+    void rejected_triggered();
+    void launch_new_experiment();
 
 
 private:

@@ -35,25 +35,29 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 CONFIG += c++11
 
+# disable unused parameter warnings
+QMAKE_CXXFLAGS = -Wno-unused-parameter
+
+
 SOURCES += \
         main.cpp \
         mainwindow.cpp \
         experiment.cpp \
         sensorsettingsdialog.cpp \
-    newexperimentdialog.cpp \
-    spinintaction.cpp
+        newexperimentdialog.cpp \
+        spinintaction.cpp
 
 HEADERS += \
         mainwindow.h \
         experiment.h \
         sensorsettingsdialog.h \
-    newexperimentdialog.h \
-    spinintaction.h
+        newexperimentdialog.h \
+        spinintaction.h
 
 FORMS += \
         mainwindow.ui \
         sensorsettingsdialog.ui \
-    newexperimentdialog.ui
+        newexperimentdialog.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

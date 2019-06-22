@@ -10,6 +10,7 @@
 #include <QSettings>
 #include <QActionGroup>
 #include <QWidgetAction>
+#include <QTimer>
 
 #include <qwt_plot.h>
 #include <qwt_plot_curve.h>
@@ -301,6 +302,13 @@ void MainWindow::on_actionOpen_triggered() {
 void MainWindow::on_actionStartCollection_triggered() {
 
 
+    /*
+    QMessageBox *mbox = new QMessageBox;
+    mbox->exec();
+    QTimer::singleShot(5000, mbox, SLOT(hide()));
+    */
+
+
     // now that we have run experiment, disnable data collection
     ui->actionStartCollection->setEnabled(false);
 
@@ -313,10 +321,10 @@ void MainWindow::on_actionStartCollection_triggered() {
     currentExperiment->setChannel2Scalar(appSettings->value("Sensor2/scalar").toDouble());
 
 
-    TaskHandle  taskHandleDrop=nullptr;
     TaskHandle  taskHandleCollection=nullptr;
     /* specify device channels */
     char        deviceChannelStr[256] = "Dev1/ai6, Dev1/ai7";
+    char        triggerChannelStr[] = "/Dev1/PFI0";
     const int   numOfChannels = 2;
     /* channel voltage range */
     float64     min = -10, max = 10;
@@ -343,56 +351,15 @@ void MainWindow::on_actionStartCollection_triggered() {
     currentExperiment->timeVector = QVector<double>(samplesPerChannel);
 
 
-
-
     // DAQmxReturnValue
     int DAQmxReturnValue = 0;
     // error string
     char DAQmxErrorStr[1024];
 
-
-
-
-    /* drop device task */
-    DAQmxReturnValue = DAQmxCreateTask("drop",&taskHandleDrop);
-
-    /* experimental */
-    //uInt32      data=0xffffffff;
-    uInt32      onData=1;
-    uInt32      offData=0;
-    int32		written;
-    DAQmxReturnValue = DAQmxCreateDOChan(taskHandleDrop,"Dev1/pfi4","",DAQmx_Val_ChanForAllLines );
-    if (DAQmxReturnValue < 0) {
-        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
-        showMessage("DAQ Error", DAQmxErrorStr);
-        return;
-    }
-    DAQmxReturnValue = DAQmxWriteDigitalU32(taskHandleDrop,1,1,10.0,DAQmx_Val_GroupByChannel,&onData,&written,nullptr);
-    if (DAQmxReturnValue < 0) {
-        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
-        showMessage("DAQ Error", DAQmxErrorStr);
-    }
-
-    /* */
-    DAQmxReturnValue = DAQmxWriteDigitalU32(taskHandleDrop,1,1,10.0,DAQmx_Val_GroupByChannel,&offData,&written,nullptr);
-    if (DAQmxReturnValue < 0) {
-        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
-        showMessage("DAQ Error", DAQmxErrorStr);
-    }
-
-
-    /* stop/clear task instance */
-    DAQmxReturnValue = DAQmxClearTask(taskHandleDrop);
-
-
-
-
-
-
-
-
     /* create collection task */
     DAQmxReturnValue = DAQmxCreateTask("collection",&taskHandleCollection);
+
+
 
     /**
      * setup device voltage channels
@@ -407,13 +374,17 @@ void MainWindow::on_actionStartCollection_triggered() {
     /* set task sampling rate */
     DAQmxCfgSampClkTiming(taskHandleCollection, "OnboardClock", static_cast<double>(samplingRate), DAQmx_Val_Rising, DAQmx_Val_FiniteSamps, static_cast<uint64_t>(samplesPerChannel) );
 
+    /* task set to start on trigger */
+    DAQmxCfgDigEdgeStartTrig(taskHandleCollection, triggerChannelStr, DAQmx_Val_Rising);
+    //DAQmxCfgDigEdgeStartTrig(taskHandleCollection, "/Dev1/PFI0", DAQmx_Val_Rising);
+
+
     /* begin task */
     DAQmxReturnValue = DAQmxStartTask(taskHandleCollection);
     if (DAQmxReturnValue < 0) {
         DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
         showMessage("DAQ Error", DAQmxErrorStr);
     }
-
 
     /* read finite data samples */
     int numRead = 0;
@@ -425,7 +396,7 @@ void MainWindow::on_actionStartCollection_triggered() {
      */
     float64 sampledData[totalArraySize];
 
-    DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, 10.0, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
+    DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, DAQmx_Val_WaitInfinitely, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
     if (DAQmxReturnValue < 0) {
         DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
         showMessage("DAQ Error", DAQmxErrorStr);
@@ -529,8 +500,8 @@ void MainWindow::plotExperiment(Experiment *experiment)
     //plot1_curve1->setSamples(e->timeVector.mid(maxElementIndex-2000, 4000), e->voltageDataSensor1.mid(maxElementIndex-2000, 4000));
 
     // display sensor scaled data
-    //plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->getAccelerationData(1).data(), experiment->voltageDataSensor1.size() );
-    plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->voltageDataSensor1.data(), experiment->voltageDataSensor1.size() );
+    plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->getAccelerationData(1).data(), experiment->voltageDataSensor1.size() );
+    //plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->voltageDataSensor1.data(), experiment->voltageDataSensor1.size() );
     plot1_curve1->setTitle( experiment->headerMap["SubjectID"]);
     plot1_curve1->setPen( plotColorList[il.size()-1], 1 );
     plot1_curve1->setRenderHint( QwtPlotItem::RenderAntialiased, true );
@@ -685,6 +656,15 @@ void MainWindow::closeEvent(QCloseEvent *event) {
  */
 void MainWindow::on_actionNew_Experiment_triggered()
 {
+    /*
+    QMessageBox *mbox = new QMessageBox;
+    mbox->setStandardButtons(QMessageBox::Abort);
+
+    connect(mbox, SIGNAL(rejected()), this, SLOT(rejected_triggered()));
+    mbox->show();
+    QTimer::singleShot(5000, mbox, SLOT(launch_new_experiment()));
+    */
+
     dlgNewExperiment = new NewExperimentDialog(this);
     dlgNewExperiment->show();
 }
@@ -727,5 +707,16 @@ void MainWindow::start_newExperiment(Experiment *experiment)
 void MainWindow::collectionDuration_valueChanged(int newValue)
 {
     appSettings->setValue("CollectionDuration", newValue);
+}
+
+void MainWindow::rejected_triggered()
+{
+    qDebug() << "rejected";
+}
+
+void MainWindow::launch_new_experiment()
+{
+    dlgNewExperiment = new NewExperimentDialog(this);
+    dlgNewExperiment->show();
 }
 
