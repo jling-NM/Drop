@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
 
     QCoreApplication::setOrganizationName("MayerLab");
     QCoreApplication::setOrganizationDomain("mrn.org");
-    QCoreApplication::setApplicationName("VoltagePlot");
+    QCoreApplication::setApplicationName("MainStreamDropDAQ");
 
     MainWindow w;
     //w.show();

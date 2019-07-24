@@ -64,7 +64,7 @@ private:
     void setCurrentExperiment(Experiment *experiment = nullptr);
 
     void writeAppSettings();
-    void readAppSettings();
+    void initAppSettings();
 
     void saveExperiment();
     void plotExperiment(Experiment *experiment = nullptr);

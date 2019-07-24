@@ -10,7 +10,6 @@
 #include <QSettings>
 #include <QActionGroup>
 #include <QWidgetAction>
-#include <QTimer>
 
 #include <qwt_plot.h>
 #include <qwt_plot_curve.h>
@@ -65,9 +64,9 @@ MainWindow::MainWindow(QWidget *parent) :
     }
 
     /* List of colors for line plots. Cycle through these as plots overlap. */
-    plotColorList << Qt::blue << Qt::red << Qt::green << Qt::yellow << Qt::black << Qt::gray<< Qt::green << Qt::red << Qt::blue << Qt::yellow << Qt::black << Qt::gray<< Qt::green << Qt::red << Qt::blue << Qt::yellow << Qt::black << Qt::gray;
+    plotColorList << Qt::darkBlue << Qt::darkRed << Qt::darkGreen << Qt::darkYellow << Qt::black << Qt::darkGray<< Qt::green << Qt::red << Qt::blue << Qt::yellow << Qt::black << Qt::gray<< Qt::green << Qt::red << Qt::blue << Qt::yellow << Qt::black << Qt::gray;
 
-    readAppSettings();
+    initAppSettings();
 
     /* initial plot */
     setupPlot();
@@ -116,23 +115,24 @@ void MainWindow::setupPlot() {
  */
 void MainWindow::resetPlot()
 {
-    //
-    //QwtPlotItemList il = ui->qwtPlot_1->itemList();
-
     if(plotZoomer1) {
+        /* reset zoom and pan stacks */
         plotZoomer1->zoom(0);
         plotZoomer2->zoom(0);
         plotPanner1->hide();
         plotPanner2->hide();
-
+        /* Disable zoom and pan buttons */
         plotZoomer1->setEnabled(false);
         plotZoomer2->setEnabled(false);
         plotPanner1->setEnabled(false);
         plotPanner2->setEnabled(false);
+        /* uncheck zoom and pan buttons */
+        ui->actionZoom->setChecked(false);
+        ui->actionPan->setChecked(false);
     }
 
 
-    // all items
+    /* remove any objects currently plotted */
     ui->qwtPlot_1->detachItems();
     ui->qwtPlot_2->detachItems();
     // reset plots
@@ -173,7 +173,7 @@ void MainWindow::writeAppSettings()
 /**
  * @brief application settings to read at launch
  */
-void MainWindow::readAppSettings()
+void MainWindow::initAppSettings()
 {
     appSettings->beginGroup("MainWindow");
     resize(appSettings->value("size", QSize(800, 600)).toSize());
@@ -192,6 +192,9 @@ void MainWindow::readAppSettings()
     appSettings->value("scalar", 0001.00);
     appSettings->endGroup();
 
+    // data directory will default to Windows public to support mulitple user logins
+    appSettings->setValue("lastDirectory", "C:\\Users\\Public\\Documents\\MainStream_DropDevice_Exp_Data");
+
 }
 
 /**
@@ -199,6 +202,7 @@ void MainWindow::readAppSettings()
  */
 void MainWindow::saveExperiment()
 {
+    // data directory will default to Windows public to support mulitple user logins
     QDir dir = QDir(appSettings->value("lastDirectory",".").toString());
 
     currentExperiment->save(dir);
@@ -330,9 +334,9 @@ void MainWindow::on_actionStartCollection_triggered() {
     float64     min = -10, max = 10;
 
     /* device sampling rate */
-    const int samplingRate   = 10000;
-    /* largest data collection is number of channels x rate x 10seconds defined gui menu */
-    const int totalArraySize = numOfChannels * samplingRate * 10;
+    const int samplingRate   = 20000; // 10000
+    /* largest data collection is number of channels x rate x 5seconds defined gui menu */
+    const int totalArraySize = numOfChannels * samplingRate * 5;
 
 
     /*
@@ -375,8 +379,7 @@ void MainWindow::on_actionStartCollection_triggered() {
     DAQmxCfgSampClkTiming(taskHandleCollection, "OnboardClock", static_cast<double>(samplingRate), DAQmx_Val_Rising, DAQmx_Val_FiniteSamps, static_cast<uint64_t>(samplesPerChannel) );
 
     /* task set to start on trigger */
-    DAQmxCfgDigEdgeStartTrig(taskHandleCollection, triggerChannelStr, DAQmx_Val_Rising);
-    //DAQmxCfgDigEdgeStartTrig(taskHandleCollection, "/Dev1/PFI0", DAQmx_Val_Rising);
+    // disabled trigger: DAQmxCfgDigEdgeStartTrig(taskHandleCollection, triggerChannelStr, DAQmx_Val_Rising);
 
 
     /* begin task */
@@ -396,7 +399,8 @@ void MainWindow::on_actionStartCollection_triggered() {
      */
     float64 sampledData[totalArraySize];
 
-    DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, DAQmx_Val_WaitInfinitely, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
+    // disabled trigger: DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, DAQmx_Val_WaitInfinitely, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
+    DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, 10, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
     if (DAQmxReturnValue < 0) {
         DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
         showMessage("DAQ Error", DAQmxErrorStr);

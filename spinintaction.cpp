@@ -13,7 +13,7 @@ SpinIntAction::SpinIntAction(const QString& action_text, QObject* parent)
 
     layout->addWidget(new QLabel(text));
     pSpinBox = new QSpinBox();
-    pSpinBox->setRange(2,10);
+    pSpinBox->setRange(2,5);
 
     layout->addWidget(pSpinBox);
     layout->setMargin(2);
