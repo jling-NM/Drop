@@ -16,9 +16,13 @@
 #include <qwt_plot_grid.h>
 #include <qwt_symbol.h>
 #include <qwt_legend.h>
+#include <qwt_plot_marker.h>
+#include <qwt_symbol.h>
+#include <qwt_text.h>
 
 #include <NIDAQmx.h>
 
+#include <algorithm>
 
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -106,7 +110,9 @@ void MainWindow::setupPlot() {
     ui->qwtPlot_1->replot();
     ui->qwtPlot_2->replot();
 
-
+    /* change cursor to basic arrow */
+    ui->qwtPlot_1->canvas()->setCursor(Qt::ArrowCursor);
+    ui->qwtPlot_2->canvas()->setCursor(Qt::ArrowCursor);
 
 }
 
@@ -499,13 +505,19 @@ void MainWindow::plotExperiment(Experiment *experiment)
     /* sensor 1 plot */
     QwtPlotCurve *plot1_curve1 = new QwtPlotCurve("Curve1");
 
-    // center on peak and display subvector once we understand window of interest
-    //int maxElementIndex = std::max_element(e->voltageDataSensor1.begin(), e->voltageDataSensor1.end()) - e->voltageDataSensor1.begin();
-    //plot1_curve1->setSamples(e->timeVector.mid(maxElementIndex-2000, 4000), e->voltageDataSensor1.mid(maxElementIndex-2000, 4000));
+    int peak_deceleration_index = std::min_element(experiment->voltageDataSensor1.begin(), experiment->voltageDataSensor1.end()) - experiment->voltageDataSensor1.begin();
+
 
     // display sensor scaled data
-    plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->getAccelerationData(1).data(), experiment->voltageDataSensor1.size() );
+    //plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->getAccelerationData(1).data(), experiment->voltageDataSensor1.size() );
+    // center on peak and display subvector once we understand window of interest
+    int d_range_begin_pos = peak_deceleration_index-100;
+    int d_range_length    = 1000;
+    plot1_curve1->setSamples(experiment->timeVector.mid(d_range_begin_pos, d_range_length).data(), experiment->getAccelerationData(1).mid(d_range_begin_pos, d_range_length).data(), d_range_length );
+    // show voltage
     //plot1_curve1->setRawSamples(experiment->timeVector.data(), experiment->voltageDataSensor1.data(), experiment->voltageDataSensor1.size() );
+
+
     plot1_curve1->setTitle( experiment->headerMap["SubjectID"]);
     plot1_curve1->setPen( plotColorList[il.size()-1], 1 );
     plot1_curve1->setRenderHint( QwtPlotItem::RenderAntialiased, true );
@@ -514,12 +526,30 @@ void MainWindow::plotExperiment(Experiment *experiment)
     ui->qwtPlot_1->insertLegend( new QwtLegend() );
     // make sure axis updates for data range
     ui->qwtPlot_1->setAxisAutoScale(QwtPlot::yLeft, true);
+    ui->qwtPlot_1->replot();
+
 
     //ui->qwtPlot_1->setAxisMaxMinor(QwtPlot::xBottom, (20000/1000));
     //qDebug() << experiment->voltageDataSensor1.size();
     //ui->qwtPlot_1->setAxisAutoScale(QwtPlot::xBottom, true);
 
-    ui->qwtPlot_1->replot();
+
+
+    //int peak_acceleration_index = std::max_element(experiment->voltageDataSensor1.begin(), experiment->voltageDataSensor1.end()) - experiment->voltageDataSensor1.begin();
+    //double peak_acceleration = experiment->getAccelerationData(1)[peak_acceleration_index];
+
+    /* add peak decel label to plot */
+    //int peak_deceleration_index = std::min_element(experiment->voltageDataSensor1.begin(), experiment->voltageDataSensor1.end()) - experiment->voltageDataSensor1.begin();
+    double peak_deceleration = experiment->getAccelerationData(1)[peak_deceleration_index];
+    QwtPlotMarker* m = new QwtPlotMarker();
+    m->setSymbol(new QwtSymbol( QwtSymbol::Diamond, Qt::red, Qt::NoPen, QSize( 5, 5 ) ));
+    m->setValue( QPointF( experiment->timeVector[peak_deceleration_index], peak_deceleration ) );
+    m->setLabel( QString::number(peak_deceleration) );
+    m->setLabelAlignment(Qt::AlignLeft);
+    m->attach(ui->qwtPlot_1);
+
+
+
 
 
     /* sensor 2 plot */
@@ -603,6 +633,9 @@ void MainWindow::on_actionZoom_triggered()
         plotZoomer2->setEnabled(true);
         plotPanner1->setEnabled(false);
         plotPanner2->setEnabled(false);
+
+        ui->qwtPlot_1->canvas()->setCursor(Qt::CrossCursor);
+        ui->qwtPlot_2->canvas()->setCursor(Qt::CrossCursor);
     }
 }
 
@@ -614,6 +647,9 @@ void MainWindow::on_actionPan_triggered()
         plotZoomer2->setEnabled(false);
         plotPanner1->setEnabled(true);
         plotPanner2->setEnabled(true);
+
+        ui->qwtPlot_1->canvas()->setCursor(Qt::SizeAllCursor);
+        ui->qwtPlot_2->canvas()->setCursor(Qt::SizeAllCursor);
     //}
 }
 
