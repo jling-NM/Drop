@@ -308,7 +308,10 @@ void MainWindow::on_actionOpen_triggered() {
 
 
 
-/* collect data from daq */
+/*
+ * collect data from daq
+ * daq sets DO high, collects data, sets DO low
+*/
 void MainWindow::on_actionStartCollection_triggered() {
 
 
@@ -323,18 +326,19 @@ void MainWindow::on_actionStartCollection_triggered() {
     ui->actionStartCollection->setEnabled(false);
 
     // initialize new experiment settings first
-    //currentExperiment->headerMap["Channel1 SensorName"] = appSettings->value("Sensor1/label", "Sensor 1").toString();
     currentExperiment->setChannel1Name(appSettings->value("Sensor1/label", "Sensor 1").toString());
     currentExperiment->setChannel1Scalar(appSettings->value("Sensor1/scalar").toDouble());
-    //currentExperiment->headerMap["Channel2 SensorName"] = appSettings->value("Sensor2/label", "Sensor 2").toString();
     currentExperiment->setChannel2Name(appSettings->value("Sensor2/label", "Sensor 2").toString());
     currentExperiment->setChannel2Scalar(appSettings->value("Sensor2/scalar").toDouble());
 
+    /* task for digital out signal to drop device */
+    TaskHandle  taskHandleDOtrigger=nullptr;
+    char        triggerChannelDOStr[] = "Dev1/port1/line0:1";
 
+    /* task for data collection */
     TaskHandle  taskHandleCollection=nullptr;
     /* specify device channels */
     char        deviceChannelStr[256] = "Dev1/ai6, Dev1/ai7";
-    char        triggerChannelStr[] = "/Dev1/PFI0";
     const int   numOfChannels = 2;
     /* channel voltage range */
     float64     min = -10, max = 10;
@@ -360,20 +364,43 @@ void MainWindow::on_actionStartCollection_triggered() {
     currentExperiment->voltageDataSensor2 = QVector<double>(samplesPerChannel);
     currentExperiment->timeVector = QVector<double>(samplesPerChannel);
 
-
     // DAQmxReturnValue
     int DAQmxReturnValue = 0;
     // error string
     char DAQmxErrorStr[1024];
 
-    /* create collection task */
+
+
+    /* init DO drop device trigger task */
+    DAQmxReturnValue = DAQmxCreateTask("triggerDO",&taskHandleDOtrigger);
+    //
+    /* init collection task */
     DAQmxReturnValue = DAQmxCreateTask("collection",&taskHandleCollection);
 
 
-
-    /**
-     * setup device voltage channels
+    /*
+     * setup DO drop device trigger channel
+     * While a pulse channel seemed more intuitive, it didn't work well
+     * so a write to the DO channel is used instead
+     */
+    /*
+    DAQmxReturnValue = DAQmxCreateCOPulseChanTime(taskHandleDOtrigger,triggerChannelDOStr,"",DAQmx_Val_Seconds,DAQmx_Val_Low,0.00,0.050,0.950);
+    if (DAQmxReturnValue < 0) {
+        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
+        showMessage("DAQ Error", DAQmxErrorStr);
+        return;
+    }
     */
+    DAQmxReturnValue = DAQmxCreateDOChan(taskHandleDOtrigger,triggerChannelDOStr,"",DAQmx_Val_ChanPerLine);
+    if (DAQmxReturnValue < 0) {
+        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
+        showMessage("DAQ Error", DAQmxErrorStr);
+        return;
+    }
+
+
+
+    /* setup collection voltage channels */
     DAQmxReturnValue = DAQmxCreateAIVoltageChan(taskHandleCollection, deviceChannelStr, "", DAQmx_Val_RSE, min, max, DAQmx_Val_Volts, nullptr );
     if (DAQmxReturnValue < 0) {
         DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
@@ -383,12 +410,11 @@ void MainWindow::on_actionStartCollection_triggered() {
 
     /* set task sampling rate */
     DAQmxCfgSampClkTiming(taskHandleCollection, "OnboardClock", static_cast<double>(samplingRate), DAQmx_Val_Rising, DAQmx_Val_FiniteSamps, static_cast<uint64_t>(samplesPerChannel) );
-
-    /* task set to start on trigger */
+    /* collection task set to start on INPUT trigger */
     // disabled trigger: DAQmxCfgDigEdgeStartTrig(taskHandleCollection, triggerChannelStr, DAQmx_Val_Rising);
 
 
-    /* begin task */
+    /* begin collection task */
     DAQmxReturnValue = DAQmxStartTask(taskHandleCollection);
     if (DAQmxReturnValue < 0) {
         DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
@@ -405,6 +431,27 @@ void MainWindow::on_actionStartCollection_triggered() {
      */
     float64 sampledData[totalArraySize];
 
+
+    /* begin DO trigger drop device task */
+    DAQmxReturnValue = DAQmxStartTask(taskHandleDOtrigger);
+    if (DAQmxReturnValue < 0) {
+        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
+        showMessage("DAQ Error", DAQmxErrorStr);
+    }
+
+    /* set DO trigger high to release drop */
+    uInt32      data=1;
+    int32		written;
+    DAQmxReturnValue = DAQmxWriteDigitalU32(taskHandleDOtrigger,1,1,0,DAQmx_Val_GroupByChannel,&data,&written,nullptr);
+    if (DAQmxReturnValue < 0) {
+        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
+        showMessage("DAQ Error", DAQmxErrorStr);
+    }
+
+
+
+
+    /* collect data sample */
     // disabled trigger: DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, DAQmx_Val_WaitInfinitely, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
     DAQmxReturnValue = DAQmxReadAnalogF64(taskHandleCollection, samplesPerChannel, 10, DAQmx_Val_GroupByScanNumber, sampledData, static_cast<uint32_t>(totalSampleSize), &numRead, nullptr );
     if (DAQmxReturnValue < 0) {
@@ -412,9 +459,23 @@ void MainWindow::on_actionStartCollection_triggered() {
         showMessage("DAQ Error", DAQmxErrorStr);
     }
 
+    /* set DO trigger low */
+    data=0;
+    DAQmxReturnValue = DAQmxWriteDigitalU32(taskHandleDOtrigger,1,1,0,DAQmx_Val_GroupByChannel,&data,&written,nullptr);
+    if (DAQmxReturnValue < 0) {
+        DAQmxGetErrorString( DAQmxReturnValue, DAQmxErrorStr, 1024 );
+        showMessage("DAQ Error", DAQmxErrorStr);
+    }
 
-    /* stop/clear task instance */
+    /* stop/clear collection task */
     DAQmxReturnValue = DAQmxClearTask(taskHandleCollection);
+
+    /* stop/clear trigger task */
+    DAQmxReturnValue = DAQmxClearTask(taskHandleDOtrigger);
+
+
+
+
 
 
     /* populate data arrays with samples */
@@ -437,47 +498,9 @@ void MainWindow::on_actionStartCollection_triggered() {
     }
 
 
-    // vs this:
-
-    /* convert sample data array to stdvector so i can loop through and get interleaved data
-       TODO: would be nice to avoid this conversion
-    */
-    /*
-     * std::vector<double> stdvector;
-    stdvector.assign(sampledData, sampledData + totalSampleSize);
-
-    // Declaring the vector iterator
-    std::vector<double>::iterator it = stdvector.begin();
-
-    // get channel 1 data from inteleaved samples
-    while (it < stdvector.end()) {
-        currentExperiment->voltageDataSensor1.append(*it);
-        std::advance(it, 2); // 10 for display downsample???
-    }
-
-    // get channel 2 data from inteleaved samples
-    it = stdvector.begin() + 1;
-    while (it < stdvector.end()) {
-        currentExperiment->voltageDataSensor2.append(*it);
-        std::advance(it, 2); // 10 for display downsample???
-    }
-
-    // create a time vector for the plot
-    currentExperiment->timeVector = QVector<double>(samplesPerChannel);
-    double time = 0.0;
-
-    for (int i = 0; i < currentExperiment->voltageDataSensor1.size(); ++i) {
-        currentExperiment->timeVector[i] = time;
-        time+=1.0/samplingRate;
-    }
-    */
-
-
-
     /* */
     MainWindow::saveExperiment();
     MainWindow::plotExperiment(currentExperiment);
-
 
 }
 
@@ -557,6 +580,7 @@ void MainWindow::plotExperiment(Experiment *experiment)
 
     // display all data
     plot1_curve2->setRawSamples(experiment->timeVector.data(), experiment->getAccelerationData(2).data(), experiment->voltageDataSensor2.size() );
+    // show voltage
     //plot1_curve2->setRawSamples(experiment->timeVector.data(), experiment->voltageDataSensor2.data(), experiment->voltageDataSensor2.size() );
     // center on peak and display subvector
     //plot1_curve2->setSamples(e->timeVector.mid(maxElementIndex-2000, 4000), e->voltageDataSensor2.mid(maxElementIndex-2000, 4000));
